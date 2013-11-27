@@ -1,5 +1,10 @@
 package main
 
+/*
+	Usage:
+	crawler [ domain_to_queue1 domain_to_queue2 ... ]
+*/
+
 import (
 	"fmt"
 	"flag"
@@ -20,7 +25,7 @@ func main() {
 	//open or create db file
 	f, err := os.OpenFile("./db.gkvlite", 0666, os.ModeExclusive)
 	if err!=nil {
-		fmt.Println("Creating db");
+		//fmt.Println("Creating db");
 		f, err = os.Create("./db.gkvlite")
 	}
 
@@ -41,7 +46,7 @@ func main() {
 	    return true
 	})
 	
-
+	//write kvstore
 	store.Flush()
 
 
