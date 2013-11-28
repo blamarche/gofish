@@ -17,4 +17,6 @@ func main() {
 	
 	args := flag.Args()
 	fmt.Println(args);
+
+	//todo: multidb search
 }

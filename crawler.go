@@ -15,11 +15,11 @@ import (
 	"strconv"
 	"net/http"
 	"io/ioutil"
-	"github.com/steveyen/gkvlite"
-	"code.google.com/p/go.net/html"
-	/*
 	"strings"
-	*/
+	"regexp"
+
+	"github.com/steveyen/gkvlite"
+	"code.google.com/p/go.net/html"	
 )
 
 //dirty...
@@ -83,7 +83,7 @@ func processQueue(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkv
 			
 			//if javascript or text, use regex to pull any http://, if html
 			//we token using go.net html parser, otherwise skip
-			if resp.Header.Get("Content-Type")=="text/html" {
+			if strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
 				
 				fmt.Println("Scraping html...")
 				p := html.NewTokenizer(resp.Body)
@@ -93,14 +93,14 @@ func processQueue(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkv
 			            break
 			        }       
 			        token := p.Token()
-			        scrapeToken(token, queue, index)
+			        scrapeToken(token, p, string(i.Key), queue, index)
 			    }
 
-			} else if resp.Header.Get("Content-Type")=="application/octet-stream" {
+			} else if strings.Contains(resp.Header.Get("Content-Type"), "application/octet-stream") {
 
 				resp.Body.Close()
 				fmt.Println("Binary. Skipping...")
-				//todo: remove from queue & log, perhaps add to binaries collection?
+				//todo: dont add to log, perhaps add to binaries collection?
 			
 			} else {
 			
@@ -110,7 +110,7 @@ func processQueue(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkv
 					fmt.Println("Err-Read: ", err)
 				}
 				//TODO: regex to extract urls to queue, probably wont bother with keywords on these
-				fmt.Println(string(body))
+				_=string(body)
 				defer resp.Body.Close()
 
 			}		
@@ -135,9 +135,61 @@ func processQueue(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkv
 
 //Grabs Urls, keywords from token attributes, data, etc
 //adds urls to queue, keywords to index
-func scrapeToken(token html.Token, queue *gkvlite.Collection, index *gkvlite.Collection) {
+func scrapeToken(token html.Token, tokenizer *html.Tokenizer, url string, queue *gkvlite.Collection, index *gkvlite.Collection) {
 	switch token.Type {
         case html.StartTagToken: // <tag>
+        	if token.Data == "a" {
+        		href:=""
+        		linktext:=""
+        		_=linktext
+
+        		nextType:=tokenizer.Next()
+        		if nextType==html.TextToken {
+        			linktext=tokenizer.Token().Data
+        		}
+
+        		for i:=0; i<len(token.Attr); i++ {
+        			if token.Attr[i].Key=="href" {
+        				href = token.Attr[i].Val
+        				if strings.Contains(href, ":") {
+        					if strings.Contains(href, "http") {
+        						queue.Set([]byte(href), []byte(""))
+        						fmt.Println("Queueing "+href)
+        						//addKeywords(href, linktext, index)
+        					}
+        				} else if strings.Index(href, "/")==0 {
+        					//todo: queue.Set([]byte(path+href), "")
+        					fmt.Println("TODO: Queueing absolute "+href)
+        					//addKeywords(url+href, linktext, index)
+        				} else {
+        					//todo: queue.Set([]byte(path+href), "")
+        					fmt.Println("TODO: Queueing relative "+href)  
+        					//addKeywords(url+href, linktext, index)
+        				}
+        			}
+        		}
+
+        	} else if token.Data == "meta" {
+        		use:=false
+        		for i:=0; i<len(token.Attr); i++ {
+        			if token.Attr[i].Key=="name" && token.Attr[i].Val=="description" {
+        				use=true
+        			} else if token.Attr[i].Key=="content" && use {
+        				text := token.Attr[i].Val
+        				addKeywords(url, text, index)
+        			}
+
+        		}
+
+        	} else if token.Data == "title" || token.Data == "h1" {
+				nextType:=tokenizer.Next()
+        		if nextType==html.TextToken {
+        			eltext:=tokenizer.Token().Data
+        			addKeywords(url, eltext, index)
+        		}  
+
+        	}
+
         	// type Token struct {
             //     Type     TokenType
             //     DataAtom atom.Atom
@@ -149,9 +201,56 @@ func scrapeToken(token html.Token, queue *gkvlite.Collection, index *gkvlite.Col
             //     Namespace, Key, Val string
             // }
         case html.TextToken: // text
+        	if strings.Index(token.Data, "http://")==0 || strings.Index(token.Data, "https://")==0 {
+				queue.Set([]byte(token.Data), []byte(""))
+				fmt.Println("Queueing "+token.Data)
+			} else if strings.Index(token.Data, "www.")==0 {
+				queue.Set([]byte("http://"+token.Data), []byte(""))
+				fmt.Println("Queueing http://"+token.Data)
+			}
+
         case html.EndTagToken: // </tag>
         case html.SelfClosingTagToken: // <tag/>
     }
+}
+
+//extract and add qualified keywords to index
+func addKeywords(url string, keywordtext string, index *gkvlite.Collection) {
+	//remove non-alphanumerics, non-space chars for spaces
+	reg, _ := regexp.Compile("[^a-zA-Z0-9 ]")
+	keywordtext = string(reg.ReplaceAll([]byte(keywordtext), []byte(" ")))
+
+	//split and loop
+	keywords := strings.Split(strings.ToLower(keywordtext), " ")
+	for i:=0; i<len(keywords); i++ {
+		if len(keywords[i])>2 {
+			switch keywords[i] {
+				//ignored keywords
+				case "and", "the":
+
+				//got this far? add em
+				default:
+					//todo: come up with better storage mechanism
+					list, err := index.Get([]byte(keywords[i]))
+					if err!=nil {
+						index.Set([]byte(keywords[i]), []byte(url+"||||"))
+						fmt.Println("Keyword: "+keywords[i])
+					} else {
+						urls := strings.Split(string(list), "||||")
+						add:= true
+						for j:=0; j<len(urls); j++ {
+							if urls[j]==url {
+								add = false
+							}
+						}
+						if add {
+							index.Set([]byte(keywords[i]), []byte(string(list)+url+"||||"))
+							fmt.Println("Keyword: "+keywords[i])
+						}
+					}
+			}
+		}
+	}
 }
 
 //Handle the few command line options logic
@@ -159,7 +258,7 @@ func handleCommandLine(args []string, queue *gkvlite.Collection, log *gkvlite.Co
 	if args[0]=="help" {
 
 		fmt.Println("Usage: crawler [command]\nUsage: crawler [domain domain ...]")
-		fmt.Println("Commands: list-queue list-log")
+		fmt.Println("Commands: list-queue list-log list-index")
 		return true
 
 	} else if args[0]=="list-queue" {
@@ -167,6 +266,15 @@ func handleCommandLine(args []string, queue *gkvlite.Collection, log *gkvlite.Co
 		fmt.Println("Current Queue\n--------------")
 		queue.VisitItemsAscend([]byte(""), true, func(i *gkvlite.Item) bool {
 		    fmt.Println(string(i.Key))
+		    return true
+		})
+		return true
+
+  	} else if args[0]=="list-index" {
+	
+		fmt.Println("Current Index\n--------------")
+		index.VisitItemsAscend([]byte(""), true, func(i *gkvlite.Item) bool {
+		    fmt.Println(string(i.Key)+" : "+string(i.Val))
 		    return true
 		})
 		return true
@@ -182,6 +290,11 @@ func handleCommandLine(args []string, queue *gkvlite.Collection, log *gkvlite.Co
 		})
 		return true
 
+	} else if args[0]=="test-regexp" {
+		reg, _ := regexp.Compile("[^a-zA-Z0-9 ]")
+		keywordtext := string(reg.ReplaceAll([]byte("abc 123 hello awesome,sauce,you&!know.it yup"), []byte(" ")))
+		fmt.Println(keywordtext)
+		return true
 	}
 
 	return false
