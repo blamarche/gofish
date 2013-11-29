@@ -75,52 +75,78 @@ func processQueue(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkv
 	    fmt.Println("Indexing: "+string(i.Key))
 	    start:=time.Now()
 
-	    //fun time!
-	    resp, err := http.Get(string(i.Key))
-		if err != nil {
-			fmt.Println("Err-Get: ", err)
-			//todo: delete url from log & queue if 404, or store in a broken link collection?
-		} else {
-			
-			//remove trailing folder slash
-			theurl:=string(i.Key)
-			if strings.LastIndex(theurl, "/")==len(theurl)-1 {
-				theurl = strings.TrimRight(theurl, "/")
-			}
+	    //remove trailing folder slash
+		theurl:=string(i.Key)
+		if strings.LastIndex(theurl, "/")==len(theurl)-1 {
+			theurl = strings.TrimRight(theurl, "/")
+		}
 
-			//if javascript or text, use regex to pull any http://, if html
-			//we tokenize using go.net html parser, otherwise skip
-			if strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
-				
-				fmt.Println("Scraping html...")
-				p := html.NewTokenizer(resp.Body)
-			    for { 
-			        tokenType := p.Next() 
-			        if tokenType == html.ErrorToken {
-			            break
-			        }       
-			        token := p.Token()
-			        scrapeToken(token, p, theurl, queue, index)
-			    }
+	    //check log to make sure we havent recently scanned a url before we go get it again (7 days)
+	    datediff := 99999.9
+		datetmp, err := log.Get(i.Key)
 
-			} else if strings.Contains(resp.Header.Get("Content-Type"), "application/octet-stream") {
+	    if err==nil {
+	    	t, err := strconv.ParseInt(string(datetmp), 10, 64)
+		    logdate := time.Unix(t, 0)
 
-				resp.Body.Close()
-				fmt.Println("Binary. Skipping...")
-				//todo: dont add to log, perhaps add to binaries collection?
-			
+	    	if err==nil {
+		    	diff := time.Now().Sub(logdate)
+		    	datediff = diff.Hours() / 24.0
+		    } else {
+		    	fmt.Println("ERR: ",err)
+		    }
+	    } else {
+	    	fmt.Println("ERR: ",err)
+	    }
+
+	    if datediff >= 7.0 {
+		    resp, err := http.Get(string(i.Key))
+			if err != nil {
+				fmt.Println("Err-Get: ", err)
+				//todo: delete url from log & queue if 404, or store in a broken link collection?
 			} else {
-			
-				fmt.Println("Using "+resp.Header.Get("Content-Type")+" as text...")
-				body, err := ioutil.ReadAll(resp.Body)
-				if err!=nil {
-					fmt.Println("Err-Read: ", err)
-				}
-				//TODO: regex to extract urls to queue, probably wont bother with keywords on these
-				_=string(body)
-				defer resp.Body.Close()
 
-			}		
+				//if javascript or text, use regex to pull any http://, if html
+				//we tokenize using go.net html parser, otherwise skip
+				if strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+					
+					fmt.Println("Scraping html...")
+					p := html.NewTokenizer(resp.Body)
+				    for { 
+				        tokenType := p.Next() 
+				        if tokenType == html.ErrorToken {
+				            break
+				        }       
+				        token := p.Token()
+				        scrapeToken(token, p, theurl, queue, index)
+				    }
+
+				} else if strings.Contains(resp.Header.Get("Content-Type"), "application/octet-stream") {
+
+					resp.Body.Close()
+					fmt.Println("Binary. Skipping...")
+					//todo: perhaps add to binaries collection?
+				
+				} else if strings.Contains(resp.Header.Get("Content-Type"), "image/") {
+
+					resp.Body.Close()
+					fmt.Println("Binary. Skipping...")	
+
+				} else {
+				
+					fmt.Println("Using "+resp.Header.Get("Content-Type")+" as text...")
+					body, err := ioutil.ReadAll(resp.Body)
+					if err!=nil {
+						fmt.Println("Err-Read: ", err)
+					}
+					//TODO: regex to extract urls to queue, probably wont bother with keywords on these
+					_=string(body)
+					defer resp.Body.Close()
+
+				}		
+			}
+		} else {
+			fmt.Println("Skipping, last indexed", datediff, "days ago")
 		}
 		
 		//stats
