@@ -87,9 +87,9 @@ func processSearch(phrase string, index []*gkvlite.Collection, meta []*gkvlite.C
 		for j:=0; j<len(hits)-1; j++ { //-1 for the extra |||| at the end
 			_, ok := results[hits[j]]
 			if ok {
-				results[hits[j]] += 1+len(keywords)-i
+				results[hits[j]] += len(keywords)-i
 			} else {
-				results[hits[j]] = 1+len(keywords)-i
+				results[hits[j]] = len(keywords)-i
 			}
 		}
 	}

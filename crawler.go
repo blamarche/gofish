@@ -333,7 +333,21 @@ func handleCommandLine(args []string, queue *gkvlite.Collection, log *gkvlite.Co
 	if args[0]=="help" {
 
 		fmt.Println("Usage: crawler [command]\nUsage: crawler [url url ...]")
-		fmt.Println("Commands: list-queue list-log list-index list-meta list-keywords")
+		fmt.Println("Commands: list-queue list-log list-index list-meta list-keywords list-titles clear-queue clear-log")
+		return true
+
+	} else if args[0]=="clear-queue" {
+
+		fmt.Println("Clearing Queue\n--------------")
+		store.RemoveCollection("scan-queue")
+		store.Flush()
+		return true
+
+	} else if args[0]=="clear-log" {
+
+		fmt.Println("Clearing Log\n--------------")
+		store.RemoveCollection("scan-log")
+		store.Flush()
 		return true
 
 	} else if args[0]=="list-queue" {
