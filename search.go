@@ -73,6 +73,7 @@ func processSearch(phrase string, index []*gkvlite.Collection, meta []*gkvlite.C
 	keywords := strings.Split(strings.ToLower(phrase), " ")
 	results := map[string]int{}
 
+	//exact keyword matches
 	for i:=0; i<len(keywords); i++ {
 		hitstr := ""
 		for _, ind := range index {
@@ -89,6 +90,56 @@ func processSearch(phrase string, index []*gkvlite.Collection, meta []*gkvlite.C
 				results[hits[j]] += 1+len(keywords)-i
 			} else {
 				results[hits[j]] = 1+len(keywords)-i
+			}
+		}
+	}
+
+	//generate keyword variations if results below a threshold
+	//todo: use a language library
+	if len(results) < 150 {
+		//strip trailing suffixes
+		suffixes := []string{"est", "ing", "ate", "ful", "ify", "st", "ty", "ed", "al", "er", "or", "s", "y", ""} //"" placeholder for no suffix
+		for i:=0; i<len(keywords); i++ {
+			tmp:=keywords[i]
+			
+			for j:=0; j<len(suffixes)-1; j++ {
+				if len(tmp)-len(suffixes[j])>0 && tmp[len(tmp)-len(suffixes[j]):] == suffixes[j] {
+					keywords[i] = tmp[0:len(tmp)-len(suffixes[j])]
+					break
+				}
+			}
+		}
+
+		//then add all the variations back to the base 
+		variants := []string{}
+		for i:=0; i<len(keywords); i++ {
+			for j:=0; j<len(suffixes); j++ {
+				if suffixes[j]!="" && keywords[i][len(keywords[i])-1]==suffixes[j][0] {
+					variants = append(variants, keywords[i]+suffixes[j][1:])
+				} else {
+					variants = append(variants, keywords[i]+suffixes[j])
+				}
+			}
+		}
+
+		//search again
+		for i:=0; i<len(variants); i++ {
+			hitstr := ""
+			for _, ind := range index {
+				hitstrtmp, err := ind.Get([]byte(variants[i]))	
+				if err==nil {
+					hitstr += string(hitstrtmp)
+				}
+			}
+			
+			hits:= strings.Split(string(hitstr), "||||")
+			for j:=0; j<len(hits)-1; j++ { //-1 for the extra |||| at the end
+				_, ok := results[hits[j]]
+				if ok {
+					results[hits[j]] += 1
+				} else {
+					results[hits[j]] = 1
+				}
 			}
 		}
 	}

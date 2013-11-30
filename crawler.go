@@ -120,6 +120,7 @@ func processQueue(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkv
 	    if datediff >= 7.0 {
 
 	    	//todo: gofish headers etc
+	    	//todo: timeout-based domain blacklist to check before queueing
 		    resp, err := http.Get(string(i.Key))
 			if err != nil {
 				fmt.Println("Err-Get: ", err)
