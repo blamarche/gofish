@@ -49,6 +49,8 @@ func main() {
 	log := store.SetCollection("scan-log", nil)
 	index := store.SetCollection("keyword-index", nil)
 
+	//todo: root-domain scoring algo
+
 	//parse command line special cases
 	if len(args)>0 && handleCommandLine(args, queue, log, index) { 
 		return
@@ -93,13 +95,15 @@ func processQueue(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkv
 		    	diff := time.Now().Sub(logdate)
 		    	datediff = diff.Hours() / 24.0
 		    } else {
-		    	fmt.Println("ERR: ",err)
+		    	//fmt.Println("ERR: ",err)
 		    }
 	    } else {
-	    	fmt.Println("ERR: ",err)
+	    	//fmt.Println("ERR: ",err)
 	    }
 
 	    if datediff >= 7.0 {
+
+	    	//todo: gofish headers etc
 		    resp, err := http.Get(string(i.Key))
 			if err != nil {
 				fmt.Println("Err-Get: ", err)
@@ -300,6 +304,15 @@ func handleCommandLine(args []string, queue *gkvlite.Collection, log *gkvlite.Co
 		fmt.Println("Current Index\n--------------")
 		index.VisitItemsAscend([]byte(""), true, func(i *gkvlite.Item) bool {
 		    fmt.Println(string(i.Key)+" : "+string(i.Val))
+		    return true
+		})
+		return true
+
+	} else if args[0]=="list-keywords" {
+	
+		fmt.Println("Current Keywords\n--------------")
+		index.VisitItemsAscend([]byte(""), true, func(i *gkvlite.Item) bool {
+		    fmt.Print(string(i.Key)+" ")
 		    return true
 		})
 		return true
