@@ -64,11 +64,24 @@ func main() {
 		queueAndCleanUrl(args[i], queue)	
 	}
 	
-	//start procesing the queue
-	processQueue(queue, log, index, meta, title)
-	
-	//write kvstore
-	store.Flush()
+	if len(args)>0 && args[0]=="forever" {
+		for {
+			//start procesing the queue
+			processQueue(queue, log, index, meta, title)
+			
+			//write kvstore
+			store.Flush()
+
+			fmt.Println("Sleeping...")
+			time.Sleep(3000 * time.Millisecond)	
+		}
+	} else {
+		//start procesing the queue
+		processQueue(queue, log, index, meta, title)
+		
+		//write kvstore
+		store.Flush()
+	}
 }
 
 //Processes the entire queue top to bottom. 
@@ -128,7 +141,7 @@ func processQueue(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkv
 				        scrapeToken(token, p, theurl, queue, index, meta, title)
 				    }
 
-				} else if strings.Contains(resp.Header.Get("Content-Type"), "application/octet-stream") {
+				} else if strings.Contains(resp.Header.Get("Content-Type"), "application/") {
 
 					resp.Body.Close()
 					fmt.Println("Binary. Skipping...")
