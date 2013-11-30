@@ -48,11 +48,13 @@ func main() {
 	queue := store.SetCollection("scan-queue", nil)
 	log := store.SetCollection("scan-log", nil)
 	index := store.SetCollection("keyword-index", nil)
+	meta := store.SetCollection("meta", nil)
+	title := store.SetCollection("title", nil)
 
 	//todo: root-domain scoring algo
 
 	//parse command line special cases
-	if len(args)>0 && handleCommandLine(args, queue, log, index) { 
+	if len(args)>0 && handleCommandLine(args, queue, log, index, meta, title) { 
 		return
 	}
 
@@ -62,14 +64,14 @@ func main() {
 	}
 	
 	//start procesing the queue
-	processQueue(queue, log, index)
+	processQueue(queue, log, index, meta, title)
 	
 	//write kvstore
 	store.Flush()
 }
 
 //Processes the entire queue top to bottom. 
-func processQueue(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkvlite.Collection) {
+func processQueue(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkvlite.Collection, meta *gkvlite.Collection, title *gkvlite.Collection) {
 	fmt.Println("Crawling...")
 	
 	queue.VisitItemsAscend([]byte(""), true, func(i *gkvlite.Item) bool {
@@ -122,7 +124,7 @@ func processQueue(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkv
 				            break
 				        }       
 				        token := p.Token()
-				        scrapeToken(token, p, theurl, queue, index)
+				        scrapeToken(token, p, theurl, queue, index, meta, title)
 				    }
 
 				} else if strings.Contains(resp.Header.Get("Content-Type"), "application/octet-stream") {
@@ -172,7 +174,8 @@ func processQueue(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkv
 
 //Grabs Urls, keywords from token attributes, data, etc
 //adds urls to queue, keywords to index
-func scrapeToken(token html.Token, tokenizer *html.Tokenizer, urlo string, queue *gkvlite.Collection, index *gkvlite.Collection) {
+func scrapeToken(token html.Token, tokenizer *html.Tokenizer, urlo string, queue *gkvlite.Collection, 
+						index *gkvlite.Collection, meta *gkvlite.Collection, title *gkvlite.Collection) {
 	switch token.Type {
         case html.StartTagToken: // <tag>
         	if token.Data == "a" {
@@ -215,6 +218,7 @@ func scrapeToken(token html.Token, tokenizer *html.Tokenizer, urlo string, queue
         				use=true
         			} else if token.Attr[i].Key=="content" && use {
         				text := token.Attr[i].Val
+        				meta.Set([]byte(urlo), []byte(text))
         				addKeywords(urlo, text, index)
         			}
 
@@ -224,6 +228,9 @@ func scrapeToken(token html.Token, tokenizer *html.Tokenizer, urlo string, queue
 				nextType:=tokenizer.Next()
         		if nextType==html.TextToken {
         			eltext:=tokenizer.Token().Data
+        			if token.Data == "title" {
+        				title.Set([]byte(urlo), []byte(eltext))
+        			}
         			addKeywords(urlo, eltext, index)
         		}  
 
@@ -283,11 +290,11 @@ func addKeywords(urlo string, keywordtext string, index *gkvlite.Collection) {
 }
 
 //Handle the few command line options logic
-func handleCommandLine(args []string, queue *gkvlite.Collection, log *gkvlite.Collection, index *gkvlite.Collection) bool {
+func handleCommandLine(args []string, queue *gkvlite.Collection, log *gkvlite.Collection, index *gkvlite.Collection, meta *gkvlite.Collection, title *gkvlite.Collection) bool {
 	if args[0]=="help" {
 
 		fmt.Println("Usage: crawler [command]\nUsage: crawler [url url ...]")
-		fmt.Println("Commands: list-queue list-log list-index")
+		fmt.Println("Commands: list-queue list-log list-index list-meta list-keywords")
 		return true
 
 	} else if args[0]=="list-queue" {
@@ -303,6 +310,24 @@ func handleCommandLine(args []string, queue *gkvlite.Collection, log *gkvlite.Co
 	
 		fmt.Println("Current Index\n--------------")
 		index.VisitItemsAscend([]byte(""), true, func(i *gkvlite.Item) bool {
+		    fmt.Println(string(i.Key)+" : "+string(i.Val))
+		    return true
+		})
+		return true
+
+	} else if args[0]=="list-meta" {
+	
+		fmt.Println("Current Meta\n--------------")
+		meta.VisitItemsAscend([]byte(""), true, func(i *gkvlite.Item) bool {
+		    fmt.Println(string(i.Key)+" : "+string(i.Val))
+		    return true
+		})
+		return true
+
+	} else if args[0]=="list-titles" {
+	
+		fmt.Println("Current Titles\n--------------")
+		title.VisitItemsAscend([]byte(""), true, func(i *gkvlite.Item) bool {
 		    fmt.Println(string(i.Key)+" : "+string(i.Val))
 		    return true
 		})
@@ -328,11 +353,6 @@ func handleCommandLine(args []string, queue *gkvlite.Collection, log *gkvlite.Co
 		})
 		return true
 
-	} else if args[0]=="test-regexp" {
-		reg, _ := regexp.Compile("[^a-zA-Z0-9 ]")
-		keywordtext := string(reg.ReplaceAll([]byte("abc 123 hello awesome,sauce,you&!know.it yup"), []byte(" ")))
-		fmt.Println(keywordtext)
-		return true
 	}
 
 	return false
