@@ -60,7 +60,8 @@ func main() {
 
 	//add any extra domains from command line to queue
 	for i:=0; i<len(args); i++ {
-		queue.Set([]byte(args[i]), []byte(args[i]))	
+		//queue.Set([]byte(args[i]), []byte(args[i]))
+		queueAndCleanUrl(args[i], queue)	
 	}
 	
 	//start procesing the queue
@@ -79,7 +80,7 @@ func processQueue(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkv
 	    fmt.Println("Indexing: "+string(i.Key))
 	    start:=time.Now()
 
-	    //remove trailing folder slash
+		//remove trailing folder slash
 		theurl:=string(i.Key)
 		if strings.LastIndex(theurl, "/")==len(theurl)-1 {
 			theurl = strings.TrimRight(theurl, "/")
@@ -112,8 +113,8 @@ func processQueue(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkv
 				//todo: delete url from log & queue if 404, or store in a broken link collection?
 			} else {
 
-				//if javascript or text, use regex to pull any http://, if html
-				//we tokenize using go.net html parser, otherwise skip
+				//if html we tokenize using go.net html parser
+				//if javascript or text, use regex to pull any http://, otherwise skip
 				if strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
 					
 					fmt.Println("Scraping html...")
@@ -172,6 +173,26 @@ func processQueue(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkv
 	})
 }
 
+//queue a url to be indexed, removing non-relevant parts, etc
+func queueAndCleanUrl(theurl string, queue *gkvlite.Collection) string {
+	if strings.Contains(theurl, "#") {
+		urlpart := strings.Split(theurl, "#")
+		theurl = urlpart[0]
+	}
+
+	if strings.Contains(theurl, "?") {
+		urlpart := strings.Split(theurl, "?")
+		theurl = urlpart[0]
+	}
+
+	if strings.LastIndex(theurl, "/")==len(theurl)-1 {
+		theurl = strings.TrimRight(theurl, "/")
+	}
+
+	queue.Set([]byte(theurl), []byte(""))
+	return theurl
+}
+
 //Grabs Urls, keywords from token attributes, data, etc
 //adds urls to queue, keywords to index
 func scrapeToken(token html.Token, tokenizer *html.Tokenizer, urlo string, queue *gkvlite.Collection, 
@@ -193,8 +214,9 @@ func scrapeToken(token html.Token, tokenizer *html.Tokenizer, urlo string, queue
         				href = token.Attr[i].Val
         				if strings.Contains(href, ":") {
         					if strings.Contains(href, "http") {
-        						queue.Set([]byte(href), []byte(""))
-        						fmt.Println("Queueing "+href)
+        						//queue.Set([]byte(href), []byte(""))
+        						cleaned := queueAndCleanUrl(href, queue)
+        						fmt.Println("Queueing "+cleaned)
         						//addKeywords(href, linktext, index)
         					}
         				} else {
@@ -202,8 +224,9 @@ func scrapeToken(token html.Token, tokenizer *html.Tokenizer, urlo string, queue
         					if err==nil {
         						u, err = u.Parse(href)
         						if err==nil {
-	        						queue.Set([]byte(u.String()), []byte(""))
-		        					fmt.Println("Queueing relative/absolute "+u.String())  
+	        						//queue.Set([]byte(u.String()), []byte(""))
+	        						cleaned := queueAndCleanUrl(u.String(), queue)
+		        					fmt.Println("Queueing "+cleaned)  
 		        					//addKeywords(url+href, linktext, index)
 		        				}
         					}
@@ -238,11 +261,13 @@ func scrapeToken(token html.Token, tokenizer *html.Tokenizer, urlo string, queue
 
         case html.TextToken: // text
         	if strings.Index(token.Data, "http://")==0 || strings.Index(token.Data, "https://")==0 {
-				queue.Set([]byte(token.Data), []byte(""))
-				fmt.Println("Queueing "+token.Data)
+				//queue.Set([]byte(token.Data), []byte(""))
+        		cleaned := queueAndCleanUrl(token.Data, queue)
+				fmt.Println("Queueing "+cleaned)
 			} else if strings.Index(token.Data, "www.")==0 {
-				queue.Set([]byte("http://"+token.Data), []byte(""))
-				fmt.Println("Queueing http://"+token.Data)
+				//queue.Set([]byte("http://"+token.Data), []byte(""))
+				cleaned := queueAndCleanUrl("http://"+token.Data, queue)
+				fmt.Println("Queueing "+cleaned)
 			}
 
         case html.EndTagToken: // </tag>
