@@ -333,7 +333,15 @@ func handleCommandLine(args []string, queue *gkvlite.Collection, log *gkvlite.Co
 	if args[0]=="help" {
 
 		fmt.Println("Usage: crawler [command]\nUsage: crawler [url url ...]")
-		fmt.Println("Commands: list-queue list-log list-index list-meta list-keywords list-titles clear-queue clear-log")
+		fmt.Println("Commands: compact-db list-queue list-log list-index list-meta list-keywords list-titles clear-queue clear-log")
+		return true
+
+	} else if args[0]=="compact-db" {
+
+		fmt.Println("Compacting db\n--------------")
+		f, _ := os.Create("./compacted.gkvlite")
+		store.CopyTo(f, 9999999)
+		fmt.Println("Saved to compacted.gkvlite\n--------------")
 		return true
 
 	} else if args[0]=="clear-queue" {
