@@ -88,103 +88,143 @@ func main() {
 func processQueue(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkvlite.Collection, meta *gkvlite.Collection, title *gkvlite.Collection) {
 	fmt.Println("Crawling...")
 	
-	queue.VisitItemsAscend([]byte(""), true, func(i *gkvlite.Item) bool {
-	    //TODO: goroutines!
-	    fmt.Println("Indexing: "+string(i.Key))
-	    start:=time.Now()
+	max_threads := 20
+	c := make(chan *gkvlite.Item, max_threads); 
+	d := make(chan int); 
+	threads_done := 0
+	threads := 0
 
-		//remove trailing folder slash
-		theurl:=string(i.Key)
-		if strings.LastIndex(theurl, "/")==len(theurl)-1 {
-			theurl = strings.TrimRight(theurl, "/")
-		}
+	//processing thread func
+	processRoutine := func(name int) {		
+		//fmt.Println("Thread started ", name)
+		count:=0
+		for i := range c {
+			count++
 
-	    //check log to make sure we havent recently scanned a url before we go get it again (7 days)
-	    datediff := 99999.9
-		datetmp, err := log.Get(i.Key)
+		    fmt.Println(name, "> Indexing: "+string(i.Key))
+		    start:=time.Now()
 
-	    if err==nil {
-	    	t, err := strconv.ParseInt(string(datetmp), 10, 64)
-		    logdate := time.Unix(t, 0)
+			//remove trailing folder slash
+			theurl:=string(i.Key)
+			if strings.LastIndex(theurl, "/")==len(theurl)-1 {
+				theurl = strings.TrimRight(theurl, "/")
+			}
 
-	    	if err==nil {
-		    	diff := time.Now().Sub(logdate)
-		    	datediff = diff.Hours() / 24.0
+		    //check log to make sure we havent recently scanned a url before we go get it again (7 days)
+		    datediff := 99999.9
+			datetmp, err := log.Get(i.Key)
+
+		    if err==nil {
+		    	t, err := strconv.ParseInt(string(datetmp), 10, 64)
+			    logdate := time.Unix(t, 0)
+
+		    	if err==nil {
+			    	diff := time.Now().Sub(logdate)
+			    	datediff = diff.Hours() / 24.0
+			    } else {
+			    	//fmt.Println("ERR: ",err)
+			    }
 		    } else {
 		    	//fmt.Println("ERR: ",err)
 		    }
-	    } else {
-	    	//fmt.Println("ERR: ",err)
-	    }
 
-	    if datediff >= 7.0 {
+		    if datediff >= 7.0 {
 
-	    	//todo: gofish headers etc
-	    	//todo: timeout-based domain blacklist to check before queueing
-		    resp, err := http.Get(string(i.Key))
-			if err != nil {
-				fmt.Println("Err-Get: ", err)
-				//todo: delete url from log & queue if 404, or store in a broken link collection?
-			} else {
-
-				//if html we tokenize using go.net html parser
-				//if javascript or text, use regex to pull any http://, otherwise skip
-				if strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
-					
-					fmt.Println("Scraping html...")
-					p := html.NewTokenizer(resp.Body)
-				    for { 
-				        tokenType := p.Next() 
-				        if tokenType == html.ErrorToken {
-				            break
-				        }       
-				        token := p.Token()
-				        scrapeToken(token, p, theurl, queue, index, meta, title)
-				    }
-
-				} else if strings.Contains(resp.Header.Get("Content-Type"), "application/") {
-
-					resp.Body.Close()
-					fmt.Println("Binary. Skipping...")
-					//todo: perhaps add to binaries collection?
-				
-				} else if strings.Contains(resp.Header.Get("Content-Type"), "image/") {
-
-					resp.Body.Close()
-					fmt.Println("Binary. Skipping...")	
-
+		    	//todo: gofish headers etc
+		    	//todo: timeout-based domain blacklist to check before queueing
+			    resp, err := http.Get(string(i.Key))
+				if err != nil {
+					fmt.Println("Err-Get: ", err)
+					//todo: delete url from log & queue if 404, or store in a broken link collection?
 				} else {
-				
-					fmt.Println("Using "+resp.Header.Get("Content-Type")+" as text...")
-					body, err := ioutil.ReadAll(resp.Body)
-					if err!=nil {
-						fmt.Println("Err-Read: ", err)
-					}
-					//TODO: regex to extract urls to queue, probably wont bother with keywords on these
-					_=string(body)
-					defer resp.Body.Close()
 
-				}		
+					//if html we tokenize using go.net html parser
+					//if javascript or text, use regex to pull any http://, otherwise skip
+					if strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+						//todo: add keywords based on url path itself
+
+						fmt.Println(name, "> Scraping html...")
+						p := html.NewTokenizer(resp.Body)
+					    for { 
+					        tokenType := p.Next() 
+					        if tokenType == html.ErrorToken {
+					            break
+					        }       
+					        token := p.Token()
+					        scrapeToken(token, p, theurl, queue, index, meta, title)
+					    }
+
+					} else if strings.Contains(resp.Header.Get("Content-Type"), "application/") {
+
+						resp.Body.Close()
+						fmt.Println(name, "> Binary. Skipping...")
+						//todo: perhaps add to binaries collection?
+					
+					} else if strings.Contains(resp.Header.Get("Content-Type"), "image/") {
+
+						resp.Body.Close()
+						fmt.Println(name, "> Binary. Skipping...")	
+
+					} else {
+					
+						fmt.Println("Using "+resp.Header.Get("Content-Type")+" as text...")
+						body, err := ioutil.ReadAll(resp.Body)
+						if err!=nil {
+							fmt.Println("Err-Read: ", err)
+						}
+						//TODO: regex to extract urls to queue, probably wont bother with keywords on these
+						_=string(body)
+						defer resp.Body.Close()
+
+					}		
+				}
+			} else {
+				fmt.Println(name, "> Skipping, last indexed", datediff, "days ago")
 			}
-		} else {
-			fmt.Println("Skipping, last indexed", datediff, "days ago")
+			
+			//stats
+		    end:=time.Now()
+		    diff:=end.Sub(start)
+
+			fmt.Println(name, "> Time (ms): "+strconv.FormatFloat(diff.Seconds()*1000.0, 'f', 4, 64))
+			fmt.Println(name, "> Finished: "+string(i.Key))	    
+			fmt.Println()
+
+		    //log serialized time of indexing
+		    log.Set(i.Key, []byte(strconv.FormatInt(time.Now().Unix(), 10)))
+		    queue.Delete(i.Key)
+
+		    if name==1 && count % 5==0{
+		    	fmt.Println("Saving...")
+		    	store.Flush()
+		    }
 		}
-		
-		//stats
-	    end:=time.Now()
-	    diff:=end.Sub(start)
+		//fmt.Println("Thread ending ", name)
+		d <- 0
+	}
+	//end goroutine func
 
-		fmt.Println("Time (ms): "+strconv.FormatFloat(diff.Seconds()*1000.0, 'f', 4, 64))
-		fmt.Println("Finished: "+string(i.Key))	    
-		fmt.Println()
-
-	    //log serialized time of indexing
-	    log.Set(i.Key, []byte(strconv.FormatInt(time.Now().Unix(), 10)))
-	    queue.Delete(i.Key)
-
-	    store.Flush()
+	queue.VisitItemsAscend([]byte(""), true, func(i *gkvlite.Item) bool {
+	    c <- i
+	    if threads < max_threads-1 {
+	    	threads++
+	    	go processRoutine(threads)
+	    }
 	    return true
 	})
+
+	close(c) //done adding to channel
+
+	//wait for all items to finish
+	for {
+		<- d
+		threads_done++
+
+		//fmt.Println("Thread complete: ",threads_done)
+		if threads_done >= threads {
+			break
+		}
+	}
 }
 
 //queue a url to be indexed, removing non-relevant parts, etc
