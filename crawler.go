@@ -25,12 +25,15 @@ import (
 
 //dirty...
 var store *gkvlite.Store
+var all_urls bool
 
 //Main function
 func main() {
 	flag.Parse()	
 	args := flag.Args()
 	
+	all_urls = false
+
 	//open or create db file
 	f, err := os.OpenFile("./db.gkvlite", 0666, os.ModeExclusive)
 	if err!=nil {
@@ -61,7 +64,11 @@ func main() {
 	//add any extra domains from command line to queue
 	for i:=0; i<len(args); i++ {
 		//queue.Set([]byte(args[i]), []byte(args[i]))
-		queueAndCleanUrl(args[i], queue)	
+		if (args[i]=="all-urls") {
+			all_urls = true
+		} else {
+			queueAndCleanUrl(args[i], queue)
+		}
 	}
 	
 	if len(args)>0 && args[0]=="forever" {
@@ -203,7 +210,25 @@ func queueAndCleanUrl(theurl string, queue *gkvlite.Collection) string {
 		theurl = strings.TrimRight(theurl, "/")
 	}
 
-	queue.Set([]byte(theurl), []byte(""))
+	//strip down to domain/subdomain only unless overridden
+	if !all_urls {
+		u, err := url.Parse(theurl)
+		if err==nil {
+			theurl = u.Scheme+"://"+u.Host
+			test, _ := queue.Get([]byte(theurl))
+			if test==nil {
+				fmt.Println("Queueing "+theurl)
+				queue.Set([]byte(theurl), []byte(""))
+			}
+		}
+	} else {	
+		test, _ := queue.Get([]byte(theurl))
+		if test==nil {
+			fmt.Println("Queueing "+theurl)
+			queue.Set([]byte(theurl), []byte(""))
+		}
+	}
+
 	return theurl
 }
 
@@ -229,8 +254,8 @@ func scrapeToken(token html.Token, tokenizer *html.Tokenizer, urlo string, queue
         				if strings.Contains(href, ":") {
         					if strings.Contains(href, "http") {
         						//queue.Set([]byte(href), []byte(""))
-        						cleaned := queueAndCleanUrl(href, queue)
-        						fmt.Println("Queueing "+cleaned)
+        						queueAndCleanUrl(href, queue)
+        						//fmt.Println("Queueing "+cleaned)
         						//addKeywords(href, linktext, index)
         					}
         				} else {
@@ -239,8 +264,8 @@ func scrapeToken(token html.Token, tokenizer *html.Tokenizer, urlo string, queue
         						u, err = u.Parse(href)
         						if err==nil {
 	        						//queue.Set([]byte(u.String()), []byte(""))
-	        						cleaned := queueAndCleanUrl(u.String(), queue)
-		        					fmt.Println("Queueing "+cleaned)  
+	        						queueAndCleanUrl(u.String(), queue)
+		        					//fmt.Println("Queueing "+cleaned)  
 		        					//addKeywords(url+href, linktext, index)
 		        				}
         					}
@@ -276,12 +301,12 @@ func scrapeToken(token html.Token, tokenizer *html.Tokenizer, urlo string, queue
         case html.TextToken: // text
         	if strings.Index(token.Data, "http://")==0 || strings.Index(token.Data, "https://")==0 {
 				//queue.Set([]byte(token.Data), []byte(""))
-        		cleaned := queueAndCleanUrl(token.Data, queue)
-				fmt.Println("Queueing "+cleaned)
+        		queueAndCleanUrl(token.Data, queue)
+				//fmt.Println("Queueing "+cleaned)
 			} else if strings.Index(token.Data, "www.")==0 {
 				//queue.Set([]byte("http://"+token.Data), []byte(""))
-				cleaned := queueAndCleanUrl("http://"+token.Data, queue)
-				fmt.Println("Queueing "+cleaned)
+				queueAndCleanUrl("http://"+token.Data, queue)
+				//fmt.Println("Queueing "+cleaned)
 			}
 
         case html.EndTagToken: // </tag>
@@ -333,7 +358,8 @@ func handleCommandLine(args []string, queue *gkvlite.Collection, log *gkvlite.Co
 	if args[0]=="help" {
 
 		fmt.Println("Usage: crawler [command]\nUsage: crawler [url url ...]")
-		fmt.Println("Commands: compact-db list-queue list-log list-index list-meta list-keywords list-titles clear-queue clear-log")
+		fmt.Println("Defaults - Only crawl domains and subdomain index pages. Use all-urls command to change.")
+		fmt.Println("Commands: all-urls compact-db list-queue list-log list-index list-meta list-keywords list-titles clear-queue clear-log")
 		return true
 
 	} else if args[0]=="compact-db" {
