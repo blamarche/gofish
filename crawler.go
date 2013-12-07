@@ -286,7 +286,7 @@ func scrapeToken(token html.Token, tokenizer *html.Tokenizer, urlo string, queue
 
         		}
 
-        	} else if token.Data == "title" || token.Data == "h1" {
+        	} else if token.Data == "title" || token.Data == "h1" || token.Data == "h2" || token.Data == "strong" {
 				nextType:=tokenizer.Next()
         		if nextType==html.TextToken {
         			eltext:=tokenizer.Token().Data
