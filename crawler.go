@@ -184,7 +184,7 @@ func processQueue(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkv
 					resp.Body.Close()
 					fmt.Println("Binary. Skipping...")	
 
-				} else {
+				} else if strings.Contains(resp.Header.Get("Content-Type"), "text"){
 				
 					fmt.Println("Using "+resp.Header.Get("Content-Type")+" as text...")
 					body, err := ioutil.ReadAll(resp.Body)
