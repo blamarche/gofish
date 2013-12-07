@@ -63,7 +63,6 @@ func main() {
 
 	//add any extra domains from command line to queue
 	for i:=0; i<len(args); i++ {
-		//queue.Set([]byte(args[i]), []byte(args[i]))
 		if (args[i]=="all-urls") {
 			all_urls = true
 		} else {
@@ -71,24 +70,49 @@ func main() {
 		}
 	}
 	
-	if len(args)>0 && args[0]=="forever" {
-		for {
-			//start procesing the queue
-			processQueue(queue, log, index, meta, title)
-			
-			//write kvstore
-			store.Flush()
+	
+	for {
+		//check log for sites to recrawl
+		queueLog(queue, log)
 
-			fmt.Println("Sleeping...")
-			time.Sleep(3000 * time.Millisecond)	
-		}
-	} else {
 		//start procesing the queue
 		processQueue(queue, log, index, meta, title)
 		
 		//write kvstore
 		store.Flush()
+
+		if len(args)==0 || (len(args)>0 && args[0]!="forever") {
+			break
+		}	
+
+		fmt.Println("Sleeping...")
+		time.Sleep(3000 * time.Millisecond)	
 	}
+
+}
+
+//Add to queue, items taht havent been crawled recently
+func queueLog(queue *gkvlite.Collection, log *gkvlite.Collection) {
+	fmt.Println("Checking log...")
+	
+	log.VisitItemsAscend([]byte(""), true, func(i *gkvlite.Item) bool {
+	    datediff := 0.0
+		datetmp := i.Val
+
+    	t, err := strconv.ParseInt(string(datetmp), 10, 64)
+	    logdate := time.Unix(t, 0)
+
+    	if err==nil {
+	    	diff := time.Now().Sub(logdate)
+	    	datediff = diff.Hours() / 24.0
+	    }
+
+	    if datediff >= 7.0 {
+	    	queueAndCleanUrl(string(i.Key), queue)
+	    }
+
+	    return true
+	})
 }
 
 //Processes the entire queue top to bottom. 
@@ -326,7 +350,7 @@ func addKeywords(urlo string, keywordtext string, index *gkvlite.Collection) {
 		if len(keywords[i])>2 {
 			switch keywords[i] {
 				//ignored keywords
-				case "and", "the":
+				case "and", "the", "not":
 
 				//got this far? add em
 				default:
