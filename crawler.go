@@ -18,20 +18,30 @@ import (
 	"io/ioutil"
 	"strings"
 	"regexp"
+	"sync"
 
 	"github.com/steveyen/gkvlite"
 	"code.google.com/p/go.net/html"	
 )
 
 //dirty...
+type RespChan chan *http.Response
+type StrChan chan string
+
 var store *gkvlite.Store
 var all_urls bool
+
+var responses RespChan
+var scanurls StrChan
+var waitsave sync.WaitGroup
 
 //Main function
 func main() {
 	flag.Parse()	
 	args := flag.Args()
-	
+
+	responses = make(chan *http.Response, 10)
+	scanurls = make(chan string, 10)	
 	all_urls = false
 
 	//open or create db file
@@ -81,10 +91,6 @@ func main() {
 		//write kvstore
 		store.Flush()
 
-		if len(args)==0 || (len(args)>0 && args[0]!="forever") {
-			break
-		}	
-
 		fmt.Println("Sleeping...")
 		time.Sleep(3000 * time.Millisecond)	
 	}
@@ -115,14 +121,121 @@ func queueLog(queue *gkvlite.Collection, log *gkvlite.Collection) {
 	})
 }
 
+func threadHttpRequester() {
+	theurl := <- scanurls //wait for first one
+	httpRequester(theurl)
+	
+	for theurl := range scanurls {
+		waitsave.Wait()
+		httpRequester(theurl)
+	}
+}
+
+func httpRequester(theurl string) {
+	fmt.Println("Requesting: "+theurl)
+	resp, err := http.Get(theurl)
+	if err != nil {
+		fmt.Println("Err-Get: ", err)
+		//todo: delete url from log & queue if 404, or store in a broken link collection?
+	} else {
+		resp.Request.RequestURI = theurl //hack. docs say not to do this, but its blank otherwise, should custom type it
+		responses <- resp
+	}
+}
+
+func threadResponseProcessor(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkvlite.Collection, meta *gkvlite.Collection, title *gkvlite.Collection) {
+	resp := <- responses //wait for first one
+	responseProcessor(resp, queue, log, index, meta, title)
+
+	for resp := range responses {
+		waitsave.Wait()
+		responseProcessor(resp, queue, log, index, meta, title)
+	}
+}
+
+func responseProcessor(resp *http.Response, queue *gkvlite.Collection, log *gkvlite.Collection, index *gkvlite.Collection, meta *gkvlite.Collection, title *gkvlite.Collection) {
+	theurl := resp.Request.RequestURI
+
+	waitsave.Wait()
+
+	fmt.Println("Indexing: "+theurl)
+    start:=time.Now()
+
+	//if html we tokenize using go.net html parser
+	//if javascript or text, use regex to pull any http://, otherwise skip
+	if strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+		
+		fmt.Println("Scraping html...")
+		p := html.NewTokenizer(resp.Body)
+	    for { 
+	        tokenType := p.Next() 
+	        if tokenType == html.ErrorToken {
+	            break
+	        }       
+	        token := p.Token()
+	        scrapeToken(token, p, theurl, queue, index, meta, title)
+	    }
+
+	} else if strings.Contains(resp.Header.Get("Content-Type"), "application/") {
+
+		resp.Body.Close()
+		fmt.Println("Binary. Skipping...")
+		//todo: perhaps add to binaries collection?
+	
+	} else if strings.Contains(resp.Header.Get("Content-Type"), "image/") {
+
+		resp.Body.Close()
+		fmt.Println("Binary. Skipping...")	
+
+	} else if strings.Contains(resp.Header.Get("Content-Type"), "text"){
+	
+		fmt.Println("Using "+resp.Header.Get("Content-Type")+" as text...")
+		body, err := ioutil.ReadAll(resp.Body)
+		if err!=nil {
+			fmt.Println("Err-Read: ", err)
+		}
+		//TODO: regex to extract urls to queue, probably wont bother with keywords on these
+		_=string(body)
+		defer resp.Body.Close()
+	}
+
+	//stats
+    end:=time.Now()
+    diff:=end.Sub(start)
+
+	fmt.Println("Time (ms): "+strconv.FormatFloat(diff.Seconds()*1000.0, 'f', 4, 64))
+	fmt.Println("Finished: "+theurl)	    
+	fmt.Println()
+
+    //log serialized time of indexing
+    log.Set([]byte(theurl), []byte(strconv.FormatInt(time.Now().Unix(), 10)))
+    queue.Delete([]byte(theurl))
+}
+
+func threadSaver() {
+	for {
+		time.Sleep(10000 * time.Millisecond)
+		waitsave.Add(1)
+		fmt.Println("Saving db...")
+		time.Sleep(500 * time.Millisecond)		
+		store.Flush()
+		waitsave.Done()		
+	}
+}
+
 //Processes the entire queue top to bottom. 
 func processQueue(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkvlite.Collection, meta *gkvlite.Collection, title *gkvlite.Collection) {
 	fmt.Println("Crawling...")
+
+	for i:=0; i<20; i++ {
+		go threadHttpRequester()
+	}
+	go threadResponseProcessor(queue, log, index, meta, title)
+	go threadSaver()
 	
 	queue.VisitItemsAscend([]byte(""), true, func(i *gkvlite.Item) bool {
-	    //TODO: goroutines!
-	    fmt.Println("Indexing: "+string(i.Key))
-	    start:=time.Now()
+
+		waitsave.Wait()
 
 		//remove trailing folder slash
 		theurl:=string(i.Key)
@@ -149,71 +262,13 @@ func processQueue(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkv
 	    }
 
 	    if datediff >= 7.0 {
-
-	    	//todo: gofish headers etc
+	    	scanurls <- string(i.Key)
+			//todo: gofish headers etc
 	    	//todo: timeout-based domain blacklist to check before queueing
-		    resp, err := http.Get(string(i.Key))
-			if err != nil {
-				fmt.Println("Err-Get: ", err)
-				//todo: delete url from log & queue if 404, or store in a broken link collection?
-			} else {
-
-				//if html we tokenize using go.net html parser
-				//if javascript or text, use regex to pull any http://, otherwise skip
-				if strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
-					
-					fmt.Println("Scraping html...")
-					p := html.NewTokenizer(resp.Body)
-				    for { 
-				        tokenType := p.Next() 
-				        if tokenType == html.ErrorToken {
-				            break
-				        }       
-				        token := p.Token()
-				        scrapeToken(token, p, theurl, queue, index, meta, title)
-				    }
-
-				} else if strings.Contains(resp.Header.Get("Content-Type"), "application/") {
-
-					resp.Body.Close()
-					fmt.Println("Binary. Skipping...")
-					//todo: perhaps add to binaries collection?
-				
-				} else if strings.Contains(resp.Header.Get("Content-Type"), "image/") {
-
-					resp.Body.Close()
-					fmt.Println("Binary. Skipping...")	
-
-				} else if strings.Contains(resp.Header.Get("Content-Type"), "text"){
-				
-					fmt.Println("Using "+resp.Header.Get("Content-Type")+" as text...")
-					body, err := ioutil.ReadAll(resp.Body)
-					if err!=nil {
-						fmt.Println("Err-Read: ", err)
-					}
-					//TODO: regex to extract urls to queue, probably wont bother with keywords on these
-					_=string(body)
-					defer resp.Body.Close()
-
-				}		
-			}
 		} else {
 			fmt.Println("Skipping, last indexed", datediff, "days ago")
 		}
-		
-		//stats
-	    end:=time.Now()
-	    diff:=end.Sub(start)
 
-		fmt.Println("Time (ms): "+strconv.FormatFloat(diff.Seconds()*1000.0, 'f', 4, 64))
-		fmt.Println("Finished: "+string(i.Key))	    
-		fmt.Println()
-
-	    //log serialized time of indexing
-	    log.Set(i.Key, []byte(strconv.FormatInt(time.Now().Unix(), 10)))
-	    queue.Delete(i.Key)
-
-	    store.Flush()
 	    return true
 	})
 }
@@ -238,7 +293,13 @@ func queueAndCleanUrl(theurl string, queue *gkvlite.Collection) string {
 	if !all_urls {
 		u, err := url.Parse(theurl)
 		if err==nil {
-			theurl = u.Scheme+"://"+u.Host
+
+			if u.Scheme=="" {
+				theurl = "http://"+u.Host	
+			} else {
+				theurl = u.Scheme+"://"+u.Host
+			}
+			
 			test, _ := queue.Get([]byte(theurl))
 			if test==nil {
 				fmt.Println("Queueing "+theurl)
