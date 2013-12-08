@@ -20,6 +20,8 @@ import (
 	"regexp"
 	"sync"
 
+	"./websearch"
+
 	"github.com/steveyen/gkvlite"
 	"code.google.com/p/go.net/html"	
 )
@@ -75,12 +77,14 @@ func main() {
 	for i:=0; i<len(args); i++ {
 		if (args[i]=="all-urls") {
 			all_urls = true
+		} else if (args[i]=="start-web") {
+			websearch.StartServer()
 		} else {
 			queueAndCleanUrl(args[i], queue)
 		}
 	}
 	
-	
+	//crawl
 	for {
 		//check log for sites to recrawl
 		queueLog(queue, log)
@@ -444,7 +448,7 @@ func handleCommandLine(args []string, queue *gkvlite.Collection, log *gkvlite.Co
 
 		fmt.Println("Usage: crawler [command]\nUsage: crawler [url url ...]")
 		fmt.Println("Defaults - Only crawl domains and subdomain index pages. Use all-urls command to change.")
-		fmt.Println("Commands: all-urls compact-db list-queue list-log list-index list-meta list-keywords list-titles clear-queue clear-log")
+		fmt.Println("Commands: start-web all-urls compact-db list-queue list-log list-index list-meta list-keywords list-titles clear-queue clear-log")
 		return true
 
 	} else if args[0]=="compact-db" {
