@@ -55,8 +55,19 @@ func handler(w http.ResponseWriter, req *http.Request) {
 							<title>Gofish Search</title>
 							<meta name="viewport" content="width=device-width, user-scalable=no">
 							<style>
+								.results {
+									margin-top: 50px;
+								}
 								a {
 									text-decoration: none;
+								}
+								form {
+									background: white;
+								    border: 1px solid #000000;
+								    padding: 6px;
+								    position: fixed;
+								    top: 10px;
+									left: 10px;
 								}
 								.result {
 									padding-top: 10px;
@@ -76,6 +87,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 							<form action='/' method='post'>
 								Search: <input name='search' type='text' value="`+keywords+`" /> <input type='submit' value='Go Fish' />
 							</form>
+							<div class="results">
 					`)
 
 	//search and get results if applicable
@@ -83,7 +95,7 @@ func handler(w http.ResponseWriter, req *http.Request) {
 		doSearch(keywords, &w)
 	}
 
-	io.WriteString(w, "</body></html>")
+	io.WriteString(w, "</div></body></html>")
 }
 
 func doSearch(keywords string, w *http.ResponseWriter) {
