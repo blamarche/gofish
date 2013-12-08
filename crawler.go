@@ -91,6 +91,13 @@ func main() {
 			queueAndCleanUrl(args[i], queue)
 		}
 	}
+
+	//start up threads
+	for i:=0; i<10; i++ {
+		go threadHttpRequester()
+	}
+	go threadResponseProcessor(queue, log, index, meta, title)
+	go threadSaver()
 	
 	//crawl
 	for {
@@ -238,12 +245,6 @@ func threadSaver() {
 //Processes the entire queue top to bottom. 
 func processQueue(queue *gkvlite.Collection, log *gkvlite.Collection, index *gkvlite.Collection, meta *gkvlite.Collection, title *gkvlite.Collection) {
 	fmt.Println("Crawling...")
-
-	for i:=0; i<20; i++ {
-		go threadHttpRequester()
-	}
-	go threadResponseProcessor(queue, log, index, meta, title)
-	go threadSaver()
 	
 	queue.VisitItemsAscend([]byte(""), true, func(i *gkvlite.Item) bool {
 
