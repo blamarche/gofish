@@ -32,7 +32,7 @@ func main() {
 	title := []*gkvlite.Collection{}
 
 	for i:=0; i<len(files); i++ {
-		if strings.Contains(files[i].Name(), ".gkvlite") && !files[i].IsDir() {
+		if strings.Contains(files[i].Name(), ".gkv") && !files[i].IsDir() {
 			//open db file(s) 
 			f, err := os.Open(files[i].Name())
 			if err==nil {

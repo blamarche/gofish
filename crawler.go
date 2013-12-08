@@ -20,10 +20,10 @@ import (
 	"regexp"
 	"sync"
 
-	"./websearch"
-
 	"github.com/steveyen/gkvlite"
 	"code.google.com/p/go.net/html"	
+
+	"./websearch"
 )
 
 //dirty...
@@ -46,10 +46,12 @@ func main() {
 	scanurls = make(chan string, 10)	
 	all_urls = false
 
+	compactDb()
+
 	//open or create db file
-	f, err := os.OpenFile("./db.gkvlite", 0666, os.ModeExclusive)
+	f, err := os.OpenFile("./db.gkv", 0666, os.ModeExclusive)
 	if err!=nil {
-		f, err = os.Create("./db.gkvlite")
+		f, err = os.Create("./db.gkv")
 	}
 
 	//setup store
@@ -455,10 +457,7 @@ func handleCommandLine(args []string, queue *gkvlite.Collection, log *gkvlite.Co
 
 	} else if args[0]=="compact-db" {
 
-		fmt.Println("Compacting db\n--------------")
-		f, _ := os.Create("./compacted.gkvlite")
-		store.CopyTo(f, 9999999)
-		fmt.Println("Saved to compacted.gkvlite\n--------------")
+		compactDb()
 		return true
 
 	} else if args[0]=="clear-queue" {
@@ -534,4 +533,29 @@ func handleCommandLine(args []string, queue *gkvlite.Collection, log *gkvlite.Co
 	}
 
 	return false
+}
+
+//Compact the gkv store
+func compactDb() {
+	fmt.Print("Compacting db...")
+	
+	//rename db
+	os.Rename("./db.gkv", "./_tmp.gkv")
+
+	//open or create db file
+	f, err := os.OpenFile("./_tmp.gkv", 0666, os.ModeExclusive)
+	if err!=nil {
+		f, err = os.Create("./_tmp.gkv")
+	}
+
+	//setup store
+	tmpstore, err := gkvlite.NewStore(f)
+	if err!=nil {
+		fmt.Println("Fatal: ",err)
+		return
+	}
+
+	f, _ = os.Create("./db.gkv")
+	tmpstore.CopyTo(f, 999999)
+	fmt.Println("Done.")
 }
