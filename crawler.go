@@ -77,8 +77,10 @@ func main() {
 	for i:=0; i<len(args); i++ {
 		if (args[i]=="all-urls") {
 			all_urls = true
-		} else if (args[i]=="start-web") {
+		} else if (args[i]=="start-http") {
 			websearch.StartServer()
+		} else if (args[i]=="start-https") {
+			websearch.StartServerSSL()
 		} else {
 			queueAndCleanUrl(args[i], queue)
 		}
@@ -448,7 +450,7 @@ func handleCommandLine(args []string, queue *gkvlite.Collection, log *gkvlite.Co
 
 		fmt.Println("Usage: crawler [command]\nUsage: crawler [url url ...]")
 		fmt.Println("Defaults - Only crawl domains and subdomain index pages. Use all-urls command to change.")
-		fmt.Println("Commands: start-web all-urls compact-db list-queue list-log list-index list-meta list-keywords list-titles clear-queue clear-log")
+		fmt.Println("Commands: start-http start-https all-urls compact-db list-queue list-log list-index list-meta list-keywords list-titles clear-queue clear-log")
 		return true
 
 	} else if args[0]=="compact-db" {

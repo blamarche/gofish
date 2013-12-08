@@ -16,16 +16,28 @@ import (
 
 
 func StartServer() {
-	go listenServer()
+	go listenServer(false)
+}
+
+func StartServerSSL() {
+	go listenServer(true)
 }
 
 
 //-------------------------------
-func listenServer() {
+func listenServer(ssl bool) {
 	http.HandleFunc("/", handler)
-	err := http.ListenAndServe(":8888", nil)
-	if err != nil {
-		log.Fatal(err)
+	
+	if ssl {
+		err := http.ListenAndServeTLS(":8888", "cert.pem", "key.pem", nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		err := http.ListenAndServe(":8888", nil)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 
