@@ -230,7 +230,7 @@ func processSearch(phrase string, index []*gkvlite.Collection, meta []*gkvlite.C
 		parts := strings.Split(urls[i], "\n")
 		io.WriteString(*w, 
 			`<div class="result">
-				<a href="`+parts[1]+`"><strong>`+parts[2]+`</strong><br>`+parts[1]+" :"+parts[0]+`</a>
+				<a target="_blank" href="`+parts[1]+`"><strong>`+parts[2]+`</strong><br>`+parts[1]+" :"+parts[0]+`</a>
 				<br><span style="color: #333"><i>`+parts[3]+`</i></span>
 			</div>
 			`)
