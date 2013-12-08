@@ -46,9 +46,11 @@ func main() {
 	scanurls = make(chan string, 10)	
 	all_urls = false
 
+	/*
 	if len(args)==0 || args[0]!="no-compact" {
 		compactDb()
 	}
+	*/
 
 	//open or create db file
 	f, err := os.OpenFile("./db.gkv", 0666, os.ModeExclusive)
